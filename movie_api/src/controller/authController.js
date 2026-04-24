@@ -1,4 +1,7 @@
 import {prisma} from "../config/db.js"
+import bcrypt from "bcryptjs"
+
+import { generateToken } from "../utils/generateToken.js";
 
 const register = async (req, res) => {
     const {name , email, password} = req.body;
@@ -8,13 +11,83 @@ const register = async (req, res) => {
     })
 
     if (userExist){
-        return re.status(400)
+        return res.status(400)
                .json({error:"User already  with this email"})
     }
 
-    
+    // Hash Password
+    const salt = await bcrypt.genSalt(10)
+    const hashPassword = await bcrypt.hash(password,salt)
 
-    res.json(body)
+    // Create User
+    const user = await prisma.uSER.create({
+        data:{
+            name,
+            email,
+            password:hashPassword,
+        }
+    });
+
+    const token = generateToken(user.id,res)
+
+    res.status(201).json({
+        status: "sucess",
+        data : {
+            user:{
+                id: user.id,
+                name: name,
+                email:user.email
+            }
+        },
+        token
+    })
 }
 
-export {register};
+const login = async (req, res) => {
+    const {email, password} = req.body;
+
+    const user = await prisma.uSER.findUnique({
+        where: {email:email},
+    })
+
+    if (!user){
+        return res.status(401)
+               .json({error:"Invalid Email or password"})
+    }
+
+    // verify password
+    const isPasswordValid = await bcrypt.compare(password, user.password)
+
+    if(!isPasswordValid){
+        return res.status(401).json({error:"Invalid Email or password"})
+    }
+
+    // Generate JWT Token
+    const token = generateToken(user.id,res)
+
+    res.status(201).json({
+        status: "sucess",
+        data : {
+            user:{
+                id: user.id,
+                email:user.email
+            }
+        },
+        token,
+    })
+}
+
+const logout = async(req, res) => {
+    
+    res.cookie("jwt","", {
+        httpOnly: true,
+        expires: new Date(0)
+    })
+
+    res.status(200).json({
+        status:"sucess",
+        message: "Logged out sucessfully"
+    })
+}
+
+export {register , login , logout};
